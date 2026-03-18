@@ -1,50 +1,105 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Copy, Check, Trash2, ArrowRightLeft, Sparkles, TerminalSquare } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Download, FileText, Trash2, Edit2, TerminalSquare, Sparkles, Copy, Check } from 'lucide-react';
 import { cn } from './lib/utils';
-import {
-  toUppercase,
-  toLowercase,
-  toTitleCase,
-  toSentenceCase,
-  removeExtraSpaces,
-  removeLineBreaks,
-} from './utils/textUtils';
+import { TestCase, Priority, loadTestCases, saveTestCases, exportTXT, exportCSV } from './utils/testCases';
 
 export default function App() {
-  const [input, setInput] = useState('');
-  const [output, setOutput] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [activeTransformation, setActiveTransformation] = useState<string | null>(null);
-
-  // Character and word counts
-  const inputChars = input.length;
-  const inputWords = input.trim() ? input.trim().split(/\s+/).length : 0;
+  const [testCases, setTestCases] = useState<TestCase[]>([]);
+  const [isEditing, setIsEditing] = useState<string | null>(null);
   
-  const outputChars = output.length;
-  const outputWords = output.trim() ? output.trim().split(/\s+/).length : 0;
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [steps, setSteps] = useState('');
+  const [expected, setExpected] = useState('');
+  const [priority, setPriority] = useState<Priority>('Medium');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Load from local storage
+  useEffect(() => {
+    const data = loadTestCases();
+    if (data.length > 0) {
+      setTestCases(data);
+    }
+  }, []);
 
+  // Sync to local storage
+  useEffect(() => {
+    saveTestCases(testCases);
+  }, [testCases]);
 
-  const handleTransform = (
-    label: string,
-    transformFn: (text: string) => string
-  ) => {
-    setOutput(transformFn(input));
-    setActiveTransformation(label);
+  const handleSave = () => {
+    if (!title.trim() || !steps.trim()) return;
+
+    if (isEditing) {
+      setTestCases(prev => prev.map(tc => tc.id === isEditing ? {
+        ...tc,
+        title,
+        description,
+        steps: steps.split('\\n').filter(s => s.trim() !== ''),
+        expected,
+        priority
+      } : tc));
+      setIsEditing(null);
+    } else {
+      const newTc: TestCase = {
+        id: crypto.randomUUID(),
+        title,
+        description,
+        steps: steps.split('\\n').filter(s => s.trim() !== ''),
+        expected,
+        priority,
+        createdAt: Date.now()
+      };
+      setTestCases(prev => [newTc, ...prev]);
+    }
+    
+    // Reset Form
+    setTitle('');
+    setDescription('');
+    setSteps('');
+    setExpected('');
+    setPriority('Medium');
   };
 
-  const handleCopy = async () => {
-    if (!output) return;
-    await navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleEdit = (tc: TestCase) => {
+    setIsEditing(tc.id);
+    setTitle(tc.title);
+    setDescription(tc.description);
+    setSteps(tc.steps.join('\\n'));
+    setExpected(tc.expected);
+    setPriority(tc.priority);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleClear = () => {
-    setInput('');
-    setOutput('');
-    setActiveTransformation(null);
+  const handleDelete = (id: string) => {
+    setTestCases(prev => prev.filter(tc => tc.id !== id));
+  };
+
+  const clearAll = () => {
+    if (window.confirm("Are you sure you want to delete ALL test cases?")) {
+      setTestCases([]);
+    }
+  };
+
+  const copyToClipboard = async (tc: TestCase) => {
+    const content = `Test Case: ${tc.title}\\nDescription: ${tc.description}\\nPriority: ${tc.priority}\\nSteps:\\n${tc.steps.map((s, i) => `${i + 1}. ${s}`).join('\\n')}\\nExpected:\\n${tc.expected}`;
+    await navigator.clipboard.writeText(content);
+    setCopiedId(tc.id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const PriorityBadge = ({ level }: { level: Priority }) => {
+    const colors = {
+      Low: 'text-gray-400 bg-gray-500/10 border-gray-500/20',
+      Medium: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
+      High: 'text-brand-400 bg-brand-500/10 border-brand-500/20'
+    };
+    return (
+      <span className={cn("px-2.5 py-1 rounded-md text-xs font-semibold border", colors[level])}>
+        {level}
+      </span>
+    );
   };
 
   return (
@@ -57,215 +112,306 @@ export default function App() {
         <div className="absolute bottom-[-10%] left-[20%] w-[50%] h-[50%] rounded-full bg-brand-900/10 blur-[120px]" />
       </div>
 
-      {/* Navbar */}
-      <nav className="border-b border-white/5 bg-black/20 backdrop-blur-xl sticky top-0 z-50">
+      {/* Semantic Navbar Setup */}
+      <header className="border-b border-white/5 bg-black/20 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-purple-500 flex items-center justify-center p-[1px]">
                <div className="w-full h-full bg-dark-bg rounded-xl flex items-center justify-center">
-                 <img src="/logo.png" alt="Logo" className="w-6 h-6 object-contain rounded-md" onError={(e) => { e.currentTarget.style.display='none' }} />
-                 <TerminalSquare className="w-4 h-4 text-brand-400 absolute opacity-50" />
+                 <TerminalSquare className="w-5 h-5 text-brand-400 absolute opacity-80" />
                </div>
             </div>
-            <span className="font-outfit font-bold text-xl tracking-tight text-white">Text-Case<span className="text-brand-400">.dev</span></span>
+            <span className="font-outfit font-bold text-xl tracking-tight text-white">Test-Case<span className="text-brand-400">.dev</span></span>
           </div>
           
           <div className="flex gap-4 items-center">
-            <button className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Pricing</button>
-            <button className="text-sm font-medium text-gray-400 hover:text-white transition-colors">API</button>
+            <nav>
+              <ul className="flex gap-4">
+                <li><a href="#" className="hidden md:block text-sm font-medium text-gray-400 hover:text-white transition-colors">Pricing</a></li>
+                <li><a href="#" className="hidden md:block text-sm font-medium text-gray-400 hover:text-white transition-colors">API</a></li>
+              </ul>
+            </nav>
             <button className="flex items-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 text-white px-4 py-2 rounded-full text-sm font-medium transition-all">
                <Sparkles className="w-4 h-4 text-brand-400" />
-               Unlock Pro
+               <span className="hidden sm:inline">Unlock Pro</span>
             </button>
           </div>
         </div>
-      </nav>
+      </header>
 
-      <main className="max-w-6xl mx-auto px-6 pt-12">
-        {/* Header Hero */}
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }} 
-            animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-300 text-xs font-medium tracking-wide mb-6"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            V2.0 Now Live - Instantly Transform Your Text
-          </motion.div>
-          
-          <motion.h1 
-            initial={{ opacity: 0, y: 10 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            transition={{ delay: 0.1 }}
-            className="text-4xl md:text-5xl font-bold tracking-tight mb-4"
-          >
-            The Ultimate Text <span className="text-gradient">Transformer.</span>
-          </motion.h1>
-          
-          <motion.p 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            transition={{ delay: 0.2 }}
-            className="text-gray-400 text-lg"
-          >
-            Paste your text below and instantly format, clean, and optimize it. Free, fast, and entirely strictly private layout.
-          </motion.p>
+      <main className="max-w-5xl mx-auto px-6 pt-12">
+        <div className="text-center max-w-2xl mx-auto mb-10">
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4 text-gradient leading-tight">
+            Build Structured Test Cases Instantly.
+          </h1>
+          <p className="text-gray-400 text-lg mb-2">
+            Turn your messy testing notes into organized, professional test cases in seconds. 
+          </p>
+          <p className="text-gray-500 text-sm">
+            Strictly Private. No Login Required. Free to Export.
+          </p>
         </div>
 
-        {/* Core Layout Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-6 lg:gap-8 items-stretch">
-          
-          {/* Input Block */}
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }} 
-            animate={{ opacity: 1, x: 0 }}
-            className="flex flex-col"
-          >
-            <div className="glass-effect rounded-2xl overflow-hidden flex-1 flex flex-col group focus-within:ring-2 focus-within:ring-brand-500/50 transition-all">
-              <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
-                <h2 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-brand-500"></div> Input Text
-                </h2>
-                <div className="text-xs text-gray-500 font-mono">
-                  {inputWords} words · {inputChars} chars
-                </div>
+        {/* Input Form Panel */}
+        <section className="glass-effect rounded-2xl overflow-hidden mb-12 shadow-glow">
+          <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-200 flex items-center gap-2 uppercase tracking-wide">
+              {isEditing ? <Edit2 className="w-4 h-4 text-brand-400" /> : <Plus className="w-4 h-4 text-brand-400" />}
+              {isEditing ? 'Editing Test Case' : 'New Test Case'}
+            </h2>
+          </div>
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 bg-dark-surface/50">
+            {/* Title & Priority */}
+            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-[1fr_200px] gap-6">
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Title *</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Login Success"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-dark-surface border border-white/10 text-white focus:outline-none focus:border-brand-500/50 transition-colors"
+                />
               </div>
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Paste your text here to get started..."
-                className="w-full flex-1 min-h-[300px] lg:min-h-[400px] p-5 bg-transparent resize-none text-gray-200 placeholder:text-gray-600 focus:outline-none font-sans leading-relaxed text-base"
-                spellCheck="false"
-              />
-              <div className="p-3 border-t border-white/5 bg-white/[0.01] flex justify-end">
-                <button 
-                  onClick={handleClear}
-                  disabled={!input}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Priority</label>
+                <select
+                  value={priority}
+                  onChange={e => setPriority(e.target.value as Priority)}
+                  className="w-full px-4 py-3 rounded-xl bg-dark-surface border border-white/10 text-white focus:outline-none focus:border-brand-500/50 transition-colors appearance-none"
                 >
-                  <Trash2 className="w-4 h-4" /> Clear
-                </button>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
               </div>
             </div>
-          </motion.div>
 
-          {/* Action Center (Buttons Grid) */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }} 
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col gap-4 justify-center"
-          >
-            <div className="glass-effect rounded-2xl p-4 w-full lg:w-[220px]">
-              
-              <div className="mb-4">
-                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Case Convert</h3>
-                <div className="grid grid-cols-2 lg:grid-cols-1 gap-2">
-                  {[
-                    { label: 'UPPERCASE', fn: toUppercase },
-                    { label: 'lowercase', fn: toLowercase },
-                    { label: 'Title Case', fn: toTitleCase },
-                    { label: 'Sentence case', fn: toSentenceCase },
-                  ].map((action) => (
-                    <button
-                      key={action.label}
-                      onClick={() => handleTransform(action.label, action.fn)}
-                      disabled={!input}
-                      className={cn(
-                        "text-left px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-between group",
-                        !input ? "opacity-50 cursor-not-allowed bg-white/5 text-gray-500" :
-                        activeTransformation === action.label 
-                          ? "bg-brand-500 text-white shadow-glow" 
-                          : "bg-dark-surface hover:bg-white/10 text-gray-300 border border-white/5 hover:border-white/10"
-                      )}
-                    >
-                      {action.label}
-                      <ArrowRightLeft className={cn("w-3.5 h-3.5 opacity-0 -translate-x-2 transition-all", input && "group-hover:opacity-100 group-hover:translate-x-0", activeTransformation === action.label && "opacity-100 translate-x-0")} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Clean Up</h3>
-                <div className="grid grid-cols-2 lg:grid-cols-1 gap-2">
-                  {[
-                    { label: 'Remove Spaces', fn: removeExtraSpaces },
-                    { label: 'Remove Breaks', fn: removeLineBreaks },
-                  ].map((action) => (
-                    <button
-                      key={action.label}
-                      onClick={() => handleTransform(action.label, action.fn)}
-                      disabled={!input}
-                      className="text-left px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 bg-dark-surface hover:bg-white/10 text-gray-300 border border-white/5 hover:border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-4 pt-4 border-t border-white/5">
-                <div className="flex items-center gap-2 mb-3 cursor-not-allowed opacity-60">
-                  <Sparkles className="w-3.5 h-3.5 text-brand-400" />
-                  <h3 className="text-xs font-semibold text-brand-300 uppercase tracking-wider">Pro Tools</h3>
-                </div>
-                <div className="grid grid-cols-1 gap-2 opacity-50">
-                   <button disabled className="text-left px-3 py-2 rounded-xl text-sm font-medium bg-dark-surface border border-brand-500/10 text-gray-400 cursor-not-allowed flex justify-between items-center group">
-                      Remove Emojis
-                   </button>
-                   <button disabled className="text-left px-3 py-2 rounded-xl text-sm font-medium bg-dark-surface border border-brand-500/10 text-gray-400 cursor-not-allowed flex justify-between items-center group">
-                      Grammar Fix
-                   </button>
-                </div>
-              </div>
-
+            {/* Description */}
+            <div className="md:col-span-2">
+               <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Description</label>
+               <textarea
+                  placeholder="What is the objective of this test case?"
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-dark-surface border border-white/10 text-white focus:outline-none focus:border-brand-500/50 min-h-[80px] transition-colors"
+               />
             </div>
-          </motion.div>
 
-          {/* Output Block */}
-          <motion.div 
-            initial={{ opacity: 0, x: 20 }} 
-            animate={{ opacity: 1, x: 0 }}
-            className="flex flex-col"
-          >
-            <div className="glass-effect rounded-2xl overflow-hidden flex-1 flex flex-col group">
-              <div className="px-5 py-3 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
-                 <h2 className="text-sm font-semibold text-gray-300 flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div> Output Result
-                 </h2>
-                 <div className="text-xs text-gray-500 font-mono">
-                  {outputWords} words · {outputChars} chars
-                </div>
-              </div>
-              <textarea
-                value={output}
-                readOnly
-                placeholder="Transformed text will appear here..."
-                className="w-full flex-1 min-h-[300px] lg:min-h-[400px] p-5 bg-transparent resize-none text-white focus:outline-none font-sans leading-relaxed text-base selection:bg-brand-500/40"
-              />
-              <div className="p-3 border-t border-white/5 bg-white/[0.01] flex justify-between items-center">
-                <div className="text-xs text-brand-400 px-3 opacity-0 animate-fade-in" style={{ opacity: activeTransformation ? 1 : 0}}>
-                  Applied: {activeTransformation}
-                </div>
-                <button 
-                  onClick={handleCopy}
-                  disabled={!output}
-                  className={cn(
-                    "flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all",
-                    !output ? "bg-white/5 text-gray-500 cursor-not-allowed" : 
-                    copied ? "bg-green-500/20 text-green-400 border border-green-500/30" : "bg-brand-600 hover:bg-brand-500 text-white shadow-glow"
-                  )}
-                >
-                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} 
-                  {copied ? 'Copied!' : 'Copy Text'}
-                </button>
-              </div>
+            {/* Steps */}
+            <div className="md:col-span-1">
+               <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Steps (One per line) *</label>
+               <textarea
+                  placeholder={"1. Open browser\\n2. Navigate to login\\n3. Submit empty form"}
+                  value={steps}
+                  onChange={e => setSteps(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-dark-surface border border-white/10 text-white focus:outline-none focus:border-brand-500/50 min-h-[140px] resize-y transition-colors leading-relaxed"
+               />
             </div>
-          </motion.div>
-          
-        </div>
 
+            {/* Expected Result */}
+            <div className="md:col-span-1">
+               <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Expected Result</label>
+               <textarea
+                  placeholder="Form validation errors should be displayed. Setup should not proceed."
+                  value={expected}
+                  onChange={e => setExpected(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-dark-surface border border-white/10 text-white focus:outline-none focus:border-brand-500/50 min-h-[140px] resize-y transition-colors leading-relaxed"
+               />
+            </div>
+          </div>
+          <div className="px-6 py-4 border-t border-white/5 bg-white/[0.01] flex justify-end gap-3">
+             {isEditing && (
+               <button 
+                onClick={() => {
+                  setIsEditing(null);
+                  setTitle(''); setDescription(''); setSteps(''); setExpected(''); setPriority('Medium');
+                }}
+                className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-400 hover:text-white transition-colors"
+               >
+                 Cancel
+               </button>
+             )}
+             <button 
+                onClick={handleSave}
+                disabled={!title.trim() || !steps.trim()}
+                className="bg-brand-600 hover:bg-brand-500 text-white px-6 py-2.5 rounded-xl text-sm font-medium transition-all shadow-glow disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                {isEditing ? 'Save Changes' : 'Save Test Case'}
+             </button>
+          </div>
+        </section>
+
+        {/* Test Case List */}
+        <section>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4 border-b border-white/10 pb-4">
+            <h2 className="text-xl font-semibold text-white">Your Test Cases ({testCases.length})</h2>
+            
+            <div className="flex items-center gap-3">
+               <button 
+                 onClick={() => exportTXT(testCases)}
+                 disabled={testCases.length === 0}
+                 className="flex items-center gap-2 px-4 py-2 bg-dark-surface border border-white/10 hover:border-white/20 hover:bg-white/10 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+               >
+                 <FileText className="w-4 h-4" /> Export TXT
+               </button>
+               <button 
+                 onClick={() => exportCSV(testCases)}
+                 disabled={testCases.length === 0}
+                 className="flex items-center gap-2 px-4 py-2 bg-dark-surface border border-white/10 hover:border-white/20 hover:bg-white/10 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+               >
+                 <Download className="w-4 h-4" /> Export CSV
+               </button>
+               {testCases.length > 0 && (
+                 <button 
+                    onClick={clearAll}
+                    className="flex items-center gap-2 px-3 py-2 text-red-400 hover:bg-red-400/10 rounded-lg text-sm font-medium transition-colors"
+                 >
+                    <Trash2 className="w-4 h-4" /> <span className="hidden sm:inline">Clear</span>
+                 </button>
+               )}
+            </div>
+          </div>
+
+          <div className="glass-effect rounded-2xl overflow-hidden shadow-glow mb-12 border border-white/5 bg-dark-surface/30">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-white/[0.03] border-b border-white/5">
+                    <th className="py-4 px-6 text-sm font-semibold text-gray-300 uppercase tracking-wider w-1/2">Title / Details</th>
+                    <th className="py-4 px-6 text-sm font-semibold text-gray-300 uppercase tracking-wider">Priority</th>
+                    <th className="py-4 px-6 text-sm font-semibold text-gray-300 uppercase tracking-wider text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <AnimatePresence>
+                    {testCases.length === 0 && (
+                      <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                        <td colSpan={3} className="py-16 text-center">
+                           <TerminalSquare className="w-12 h-12 text-gray-600 mx-auto mb-4 opacity-50" />
+                           <h3 className="text-lg font-medium text-gray-400 mb-2">No test cases yet</h3>
+                           <p className="text-sm text-gray-500 max-w-sm mx-auto">Create your first organized QA test case above. It will be saved instantly to your browser.</p>
+                        </td>
+                      </motion.tr>
+                    )}
+                    {testCases.map((tc) => (
+                      <TableRow 
+                        key={tc.id} 
+                        tc={tc} 
+                        isEditing={isEditing === tc.id}
+                        onEdit={() => handleEdit(tc)} 
+                        onDelete={() => handleDelete(tc.id)} 
+                        onCopy={() => copyToClipboard(tc)} 
+                        copied={copiedId === tc.id}
+                        PriorityBadge={PriorityBadge}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
+  );
+}
+
+interface TableRowProps {
+  tc: TestCase;
+  isEditing: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onCopy: () => void;
+  copied: boolean;
+  PriorityBadge: ({ level }: { level: Priority }) => JSX.Element;
+}
+
+// Subcomponent for Expandable Rows
+function TableRow({ tc, isEditing, onEdit, onDelete, onCopy, copied, PriorityBadge }: TableRowProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <>
+      <motion.tr 
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className={cn("border-b border-white/5 group hover:bg-white/[0.01] transition-colors", isEditing && "bg-brand-500/5")}
+      >
+        <td className="py-4 px-6">
+          <div className="flex flex-col">
+             <button 
+                onClick={() => setExpanded(!expanded)} 
+                className="text-left flex items-center gap-2 hover:text-brand-300 transition-colors focus:outline-none"
+             >
+                <span className="font-semibold text-white text-base truncate max-w-[200px] md:max-w-md">{tc.title}</span>
+                <span className="text-xs text-brand-400 border border-brand-400/20 bg-brand-400/10 px-2 py-0.5 rounded-full whitespace-nowrap hidden sm:inline-block">
+                  {expanded ? 'Hide Details' : 'View Details'}
+                </span>
+             </button>
+             {tc.description && !expanded && (
+               <p className="text-sm text-gray-400 mt-1 truncate max-w-[200px] md:max-w-md">{tc.description}</p>
+             )}
+          </div>
+        </td>
+        <td className="py-4 px-6 align-top pt-5">
+           <PriorityBadge level={tc.priority} />
+        </td>
+        <td className="py-4 px-6 align-top text-right pt-4">
+          <div className="flex items-center justify-end gap-2">
+            <button title="Copy" onClick={onCopy} className={cn("p-1.5 rounded-lg text-gray-400 hover:text-white transition-colors hover:bg-white/10", copied && "text-green-400 bg-green-400/10")}>
+               {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            </button>
+            <button title="Edit" onClick={onEdit} className="p-1.5 rounded-lg text-blue-400 hover:text-blue-300 transition-colors hover:bg-white/10">
+               <Edit2 className="w-4 h-4" />
+            </button>
+            <button title="Delete" onClick={onDelete} className="p-1.5 rounded-lg text-red-400 hover:text-red-300 transition-colors hover:bg-red-500/10">
+               <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </td>
+      </motion.tr>
+      
+      {/* Expandable Details Section */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.tr 
+             initial={{ opacity: 0, height: 0 }}
+             animate={{ opacity: 1, height: 'auto' }}
+             exit={{ opacity: 0, height: 0 }}
+             className="bg-black/20 border-b border-white/5 overflow-hidden"
+          >
+            <td colSpan={3} className="py-6 px-6 relative">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 rounded-xl border border-white/5 bg-dark-bg/50">
+                {tc.description && (
+                  <div className="col-span-1 md:col-span-2 mb-2">
+                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Objective / Description</h4>
+                    <p className="text-sm text-gray-300 bg-black/30 p-3 rounded-lg border border-white/5">{tc.description}</p>
+                  </div>
+                )}
+                
+                <div>
+                   <h4 className="text-xs font-semibold text-brand-300 uppercase tracking-wider mb-2">Steps</h4>
+                   <ol className="list-decimal list-inside text-sm text-gray-300 space-y-1.5 bg-black/30 p-4 rounded-lg border border-white/5">
+                     {tc.steps.map((s: string, i: number) => (
+                       <li key={i}>{s}</li>
+                     ))}
+                   </ol>
+                </div>
+                
+                <div>
+                   <h4 className="text-xs font-semibold text-green-400 uppercase tracking-wider mb-2">Expected Result</h4>
+                   <div className="text-sm text-gray-300 whitespace-pre-wrap bg-black/30 p-4 rounded-lg border border-white/5 h-full">
+                     {tc.expected || <span className="text-gray-600 italic">None provided</span>}
+                   </div>
+                </div>
+              </div>
+            </td>
+          </motion.tr>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
